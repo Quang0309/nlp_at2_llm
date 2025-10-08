@@ -1,0 +1,203 @@
+question,answer,context,reasoning,faithfulness_score,relevancy_score
+What is K Nearest Neighbor in ML ?,K-nearest neighbors (KNN) - Use observations' proximity to determine correct prediction. It can be used for both regression and classification.,"K-Nearest Neighbors
+18
+---
+K-nearest neighbors
+19
+Nearest Neighbors:
+Use observations’ proximity to 
+determine correct prediction
+K:
+How many neighbor the model will 
+consider
+Note: KNN can be used for regression and 
+classification
+---
+Distance and Neighbors
+K-distance is the distance between a data point, and it’s Kᵗʰ 
+nearest neighbor. 
+K-neighbors includes a set of points that within the circle of 
+radius K-distance.
+Example:
+If K=2, K-neighbors of A will be C, B, and D
+---
+K-nearest neighbors Algorithm
+20
+1. Load the training data
+2. Choose the value of K
+3. Load the observation to predict on
+4. Calculate the Euclidean distance between the 
+observation and all training data points
+5. Store the Euclidean distances in a list and 
+sort it
+6. Subset the first K points
+7. Assign a class to the observation based on 
+the majority of classes present in the chosen 
+points
+If K = 3, then observation will be the 
+average of the 3 nearest neighbors. 
+X1
+X2","{'faithfulness_check': ""The generated answer states that KNN uses observations' proximity to determine predictions and can be used for both regression and classification. This is directly supported by the context snippets (lines 18-20). The algorithm steps are not mentioned in the answer, but they aren't part of the question either."", 'relevancy_check': 'The user asked about what K Nearest Neighbor is in ML. The generated answer explains its core concept and applications, which directly addresses the query.'}",5,5
+What is overfitting mentioned in ANLP?,Overfitting occurs when the classifier performs much worse on the test data than on the training data (high error rate).,"Overfitting
+• Overfitting occurs when the classifier performs much worse on the 
+test data than on the training data (high error rate)
+E.g. Training accuracy = 85%, Test accuracy = 40%
+• The trained features are too specific to the current training data
+• We can restrict the machine-learning algorithm in some way to 
+avoid overfitting
+When a model overfits to the training data, it is not generalisable
+---
+What have we learned from this book?
+Objects are assigned a discrete label, e.g., isMyMom, isNotMyMom
+A learning algorithm (the butterfly in the story) or classifier will learn how to 
+assign labels to new objects
+• Hint: features are important if they lead to the correct decision; less important 
+otherwise
+Learning algorithms produce incorrect classifications when not exposed to 
+sufficient data. This situation is called overfitting. 
+60
+---
+Evaluation metrics
+• Accuracy - The number of correct predictions that the classifier has made divided by the total 
+number of predictions. However, accuracy alone is not always the best metric to evaluate the 
+performance of a classifier especially  when categories are imbalanced.
+• Precision - The number of correct predictions made by the classifier, over the total number of 
+predictions for a given tag (including both correct or incorrect predictions). A high precision metric 
+indicates there are less false positives.
+• Recall - The number of texts that were predicted correctly, over the total number that should have 
+been categorized with a given tag. A high recall metric means that there were less false 
+negatives. 
+• F1 score - Combines the parameters of precision and recall to show how well your classifier is 
+working. This metric is a better indicator than accuracy to understand how good predictions are 
+for all categories in your model.
+---
+Train - Test split
+• We separate out a small fraction of the available data as the test set
+• We use the remaining data to build a suitable model or classifier (training 
+data). Then we feed the test data to this model to calculate model 
+performance
+• Since we know the class of each element of the test data, we can tell how 
+well the model does on the test data
+• 80-20 splits are most common (but can also be 70-30 etc.)
+• We can also have a holdout subset that provides a final estimate of 
+the machine learning model’s performance after it has been trained and 
+validated. Holdout sets should never be used for improving 
+or tuning
+algorithms!","{'faithfulness': 'The generated answer correctly identifies that overfitting occurs when a classifier performs worse on test data than training data. However, it does not mention all aspects of the definition provided in the context (e.g., features being too specific or lack of generalizability). The core claim about performance discrepancy is present but incomplete.', 'relevancy': ""The answer directly addresses part of the user's question by explaining overfitting through classifier performance. However, it does not fully cover all relevant aspects mentioned in the context (e.g., accuracy metrics limitations or train-test split importance) that could be expected to explain what 'overfitting' means in ANLP.""}",3,3
+How does Support Vector Machine (SVM) works?,Find the best boundary that will separate classes.,"Finding Boundary
+15
+Objective:
+Find the best boundary 
+that will separate 
+classes (biggest margin 
+between support 
+vectors)
+Support Vectors
+Margin
+---
+SVM for Classiﬁcation
+14
+Objective:
+Find the best boundary that will 
+separate classes
+---
+Best Boundary
+16
+---
+Kernel Trick
+18
+Solution:
+Add a new dimension (by applying 
+a transformation) and find the best 
+separating hyperplane
+y
+x","{'faithfulness': ""The answer states 'Find the best boundary that will separate classes.' This is directly supported by the context (e.g., 'Finding Boundary' section). However, the context also includes information about support vectors and the margin, which are not mentioned in the answer. The answer does not fully capture all relevant details from the context."", 'relevancy': ""The answer addresses part of the user's question about how SVM works by mentioning finding a boundary to separate classes. However, it does not provide sufficient detail or explain other key aspects (like support vectors and kernel trick) that are implied in 'how' something functions.""}",3,3
+Tell me about the assignment 3 of machine learning and algo course?,The provided documents do not contain enough information to answer this question.,"15
+4.
+Strength of justification and explanation of models 
+selected, data transformation performed, 
+hyperparameters selected and accuracy of results 
+with evidence supporting claims
+25
+5.
+Clarity and quality of written report, data 
+visualisation and appropriateness of communication 
+style to audience
+20
+More information can be found on Canvas:
+https://canvas.uts.edu.au/courses/34235/assignments/209082
+---
+final users
+17%
+4. Strength of justification and explanation for features 
+selected and model used
+25%
+5. Clarity and quality of written report, data visualisation and 
+appropriateness of communication style to audience
+18%
+More information can be found on Canvas:
+https://canvas.uts.edu.au/courses/34235/assignments/209081
+---
+Data Sources
+6
+Raw data
+Unstructured
+Unprocessed
+Distributed
+Curated data
+Schema
+Cleaned
+Curated data
+Subset External data
+On-request
+CSV
+Parquet
+Avro
+...
+Redshift
+Snowflake
+Postgres
+MySQL
+MongoDB
+...
+Postgres
+MySQL
+MongoDB
+...
+JSON
+Text
+CSV
+...
+Description
+Format
+Datalake Data warehouse Datamart API
+---
+Assignment 2
+40
+Submission Requirements: 
+You will need to submit the following files on Canvas:
+● 5 Jupyter notebooks (one for each experiment) as 
+.ipynb ﬁles
+● 5 Jupyter notebooks (one for each experiment) as .pdf 
+ﬁles
+● 1 ﬁnal report and submit it on Canvas as .pdf ﬁle
+● 1 .zip ﬁle containing all your ﬁles
+In total you should submit 12 files on Canvas.
+Note: Be careful with the naming convention
+Due Date: 25/04/2025 11:59pm Assessment Criteria: 
+ Criteria Weight (%)
+1. Quality, relevance and cleanliness of code and 
+visualisation 20
+2. Pertinence and quality of scientific experimentation 
+and analytic investigation 20
+3.
+Depth of discussion of ethics/privacy issues 
+(including matters related to Indigenous people ), 
+value, benefits, risks and recommendation for 
+business stakeholders and final users
+15
+4.
+Strength of justification and explanation of models 
+selected, data transformation performed, 
+hyperparameters selected and accuracy of results 
+with evidence supporting claims","{'faithfulness': ""The answer correctly states that there isn't enough information in the provided context documents to address the user's question about Assignment 3. However, since no details about Assignment 3 are present in the retrieved context (only references to Assignment 2 and data sources), the answer is not supported by any relevant evidence from the context."", 'relevancy': ""The answer does not provide any information related to Assignment 3 of a machine learning and algorithms course. The user's question specifically asks about this assignment, but the retrieved context contains details only about Assignment 2 (submission requirements, due date) and data sources, which are unrelated or tangential at best.""}",1,1
