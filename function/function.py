@@ -1,0 +1,244 @@
+import os
+from typing import List, Set
+
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings import OllamaEmbeddings
+from langchain_community.vectorstores import FAISS
+
+from langchain.retrievers import MultiQueryRetriever
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_ollama import ChatOllama
+
+
+# ========= ENV / Defaults =========
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(BASE_DIR)
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")    
+OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+
+os.environ.setdefault("OLLAMA_HOST", OLLAMA_BASE_URL)
+DATASET_DIR = os.getenv("DATASET_DIR", os.path.join(PROJECT_ROOT, "Dataset", "pdfs"))
+INDEX_PATH  = os.getenv("INDEX_PATH",  os.path.join(PROJECT_ROOT, "Dataset", "vector_store"))
+
+os.makedirs(DATASET_DIR, exist_ok=True)
+os.makedirs(INDEX_PATH, exist_ok=True)
+
+
+# ========= PDF & Index helpers =========
+def load_pdf_and_split(pdf_directory: str):
+    """
+    Load all PDFs (walk recursively). Return list[Document] (page-level).
+    Gắn thêm metadata 'subject' = tên folder con chứa file.
+    """
+    all_pdf_docs: List = []
+    for root, _, files in os.walk(pdf_directory):
+        subject = os.path.basename(root)
+        for filename in files:
+            if filename.lower().endswith(".pdf"):
+                file_path = os.path.join(root, filename)
+                try:
+                    loader = PyPDFLoader(file_path)
+                    docs_for_file = loader.load()  # list[Document]
+                    for d in docs_for_file:
+                        d.metadata["subject"] = subject
+                    all_pdf_docs.extend(docs_for_file)
+                    print(f"Loaded {len(docs_for_file)} pages from {filename} (subject={subject})")
+                except Exception as e:
+                    print(f"Error loading {filename}: {e}")
+    return all_pdf_docs
+
+
+def build_faiss_from_docs(docs, *, chunk_size=1000, chunk_overlap=200, index_path=INDEX_PATH):
+    """
+    Split → embed (OllamaEmbeddings) → build FAISS → save_local(index_path).
+    """
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    splits = splitter.split_documents(docs)
+
+    embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+    vs = FAISS.from_documents(splits, embedding=embeddings)
+    vs.save_local(index_path)
+    return vs, len(splits)
+
+
+def load_index(index_path=INDEX_PATH):
+    """
+    Load FAISS from disk (allow_dangerous_deserialization=True because FAISS).
+    """
+    embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+    return FAISS.load_local(index_path, embeddings, allow_dangerous_deserialization=True)
+
+
+def append_new_pdfs_to_index(
+    pdf_dir=DATASET_DIR,
+    index_path=INDEX_PATH,
+    *,
+    chunk_size=1000,
+    chunk_overlap=200
+):
+    """
+    Add new pdfs
+    """
+    vs = load_index(index_path)
+    existing_sources = {os.path.basename(v.metadata.get("source", "")) for v in vs.docstore._dict.values()}
+
+    all_docs = load_pdf_and_split(pdf_dir)
+    new_docs = [d for d in all_docs if os.path.basename(d.metadata.get("source", "")) not in existing_sources]
+    if not new_docs:
+        return 0
+
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    splits = splitter.split_documents(new_docs)
+
+    embeddings = OllamaEmbeddings(model=OLLAMA_EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+    vs.add_documents(splits, embedding=embeddings)
+    vs.save_local(index_path)
+    return len(splits)
+
+
+# ========= Prompts =========
+_CONTEXTUALIZE_Q_SYSTEM_PROMPT = (
+    "You are a query rephrasing assistant. Your ONLY task is to rephrase a follow-up "
+    "question into a standalone question.\n"
+    "Use the chat history and the user input to produce a standalone question that is "
+    "fully understandable without chat history.\n"
+    "If the user input is ALREADY standalone, return it unchanged.\n"
+    "Do NOT answer the question. Only output the rephrased question."
+)
+
+_QA_SYSTEM_PROMPT = (
+    "You are a specialized assistant for answering questions based ONLY on the provided context excerpts "
+    "from university course materials (slides, notes, assignments).\n"
+    "Follow these rules STRICTLY:\n"
+    "1) ONLY use information present in the context below. DO NOT use outside knowledge.\n"
+    "2) If the context does not contain the answer, reply EXACTLY: 'The provided documents do not contain the answer.'\n"
+    "3) If the user greets you, greet back briefly (no extra info).\n\n"
+    "----------------\n"
+    "CONTEXT:\n{context}\n"
+    "----------------"
+)
+
+
+# ========= RAG chain helpers =========
+def make_retrieval_chain(vectorstore):
+    """
+    Build: MultiQueryRetriever -> history-aware retriever -> stuff-docs QA chain.
+    """
+    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+
+    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", _CONTEXTUALIZE_Q_SYSTEM_PROMPT),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
+
+    qa_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", _QA_SYSTEM_PROMPT),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
+
+    question_answer_chain = create_stuff_documents_chain(llm, qa_prompt)
+    base_ret = vectorstore.as_retriever(search_kwargs={"k": 4})
+    mq_ret = MultiQueryRetriever.from_llm(retriever=base_ret, llm=llm)
+    history_aware_ret = create_history_aware_retriever(llm, mq_ret, contextualize_q_prompt)
+
+    return create_retrieval_chain(history_aware_ret, question_answer_chain)
+
+
+def list_index_sources(vs) -> Set[str]:
+    return {os.path.basename(v.metadata.get("source", "")) for v in vs.docstore._dict.values()}
+
+
+def simple_retrieval(vs, query: str, k: int = 3):
+    """
+    Plain retriever.get_relevant_documents(query)
+    """
+    retriever = vs.as_retriever(search_kwargs={"k": k})
+    return retriever.get_relevant_documents(query)
+
+
+def multiquery_retrieval(vs, query: str, k: int = 4):
+    """
+    MultiQueryRetriever run.
+    """
+    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+    retriever = MultiQueryRetriever.from_llm(
+        retriever=vs.as_retriever(search_kwargs={"k": k}),
+        llm=llm
+    )
+    return retriever.get_relevant_documents(query)
+
+def compare_retrievers(vs, query: str, k: int = 4, show_content: bool = False):
+    """
+    Compare basic retriever vs MultiQueryRetriever for the same query.
+    Prints retrieved documents, overlap, and unique sources.
+    """
+    llm = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+
+    # --- Basic retrieval
+    basic_ret = vs.as_retriever(search_kwargs={"k": k})
+    basic_docs = basic_ret.get_relevant_documents(query)
+
+    # --- MultiQuery retrieval
+    mq_ret = MultiQueryRetriever.from_llm(
+        retriever=vs.as_retriever(search_kwargs={"k": k}),
+        llm=llm
+    )
+    mq_docs = mq_ret.get_relevant_documents(query)
+
+    # --- Process sources
+    def extract_sources(docs):
+        srcs = []
+        for d in docs:
+            src = os.path.basename(d.metadata.get("source", ""))
+            pg = d.metadata.get("page", -1) + 1
+            srcs.append(f"{src} (p.{pg})")
+        return srcs
+
+    basic_srcs = extract_sources(basic_docs)
+    mq_srcs = extract_sources(mq_docs)
+
+    basic_set = set(basic_srcs)
+    mq_set = set(mq_srcs)
+    overlap = basic_set.intersection(mq_set)
+
+    print("==== 🔍 Basic Retriever ====")
+    for i, s in enumerate(basic_srcs, 1):
+        print(f"  {i:02d}. {s}")
+        if show_content:
+            print(f"      {basic_docs[i-1].page_content[:180]}...")
+    print(f"Total: {len(basic_docs)} | Unique sources: {len(basic_set)}\n")
+
+    print("==== 🔀 MultiQuery Retriever ====")
+    for i, s in enumerate(mq_srcs, 1):
+        print(f"  {i:02d}. {s}")
+        if show_content:
+            print(f"      {mq_docs[i-1].page_content[:180]}...")
+    print(f"Total: {len(mq_docs)} | Unique sources: {len(mq_set)}\n")
+
+    print("==== 📊 Comparison ====")
+    print(f"Overlap: {len(overlap)} docs")
+    if overlap:
+        for s in overlap:
+            print(f"  - {s}")
+    print(f"New (only in MultiQuery): {len(mq_set - basic_set)}")
+    print(f"Missed (only in Basic): {len(basic_set - mq_set)}")
+
+    return {
+        "basic_docs": basic_docs,
+        "multiquery_docs": mq_docs,
+        "overlap": overlap,
+        "basic_sources": basic_srcs,
+        "mq_sources": mq_srcs,
+    }

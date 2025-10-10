@@ -1,0 +1,94 @@
+# ===============================
+# LangChain + Ollama + Streamlit RAG setup
+# ===============================
+
+services:
+  # ===========================
+  # 1) Ollama main service
+  # Runs the local model server (HTTP API on 11434)
+  # ===========================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"                
+    volumes:
+      - ollama_models:/root/.ollama  
+    healthcheck:                    
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  # ===========================
+  # 2) Init base model (pull llama3.1 once)
+  # Uses array-form command (no shell/quotes problems)
+  # ===========================
+  init-llama:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    command: [ "pull", "llama3.1"]
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: "no"
+
+  # ===========================
+  # 3) Init embedding model (pull nomic-embed-text once)
+  # Runs after init-llama succeeds
+  # ===========================
+  init-embed:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+      init-llama:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    command: [ "pull", "nomic-embed-text"]
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: "no"
+
+  # ===========================
+  # 4) Streamlit app (RAG UI)
+  # Waits for both init services to finish
+  # ===========================
+  app:
+    build: .
+    container_name: streamlit-ollama-rag
+    depends_on:
+      ollama:
+        condition: service_healthy
+      init-llama:
+        condition: service_completed_successfully
+      init-embed:
+        condition: service_completed_successfully
+    environment:
+      # Ollama connection
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1}
+      - OLLAMA_EMBED_MODEL=${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      # App paths
+      - DATASET_DIR=/app/Dataset/pdfs
+      - INDEX_PATH=/app/Dataset/vector_store
+      # Streamlit telemetry off
+      - STREAMLIT_BROWSER_GATHERUSAGESTATS=false
+    volumes:
+      - ./Dataset:/app/Dataset:rw
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+# ===============================
+# Shared persistent volumes
+# ===============================
+volumes:
+  ollama_models:
