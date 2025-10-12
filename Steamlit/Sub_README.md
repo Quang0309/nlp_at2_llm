@@ -73,14 +73,21 @@ The system follows a **RAG (Retrieval-Augmented Generation)** pipeline:
         docker compose down
         ```
 
-5.  **Rebuild after code or dependency changes (optional):**
+5.  **Rebuild after code or dependency changes :**
     *   If you update your code or `requirements.txt`, rebuild before running again:
         ```bash
         docker compose up -d --build
-        ```
+6.  **Rebuild after code or function changes (optional):**
+    *   If you update your code or `requirements.txt`, rebuild before running again:
+        ```bash
+        docker compose up -d --build       ```
+    *   If you update your function only , rebuild before running again:
+        ```bash
+        docker compose up -d --build app   ```
 ---
  **Notes:**
 * The container automatically installs packages from `requirements.txt`.
+* After the first build, if you only update functions, using command 6 will be faster.
 * Make sure Ollama models (like `llama3` and `nomic-embed-text`) are already downloaded and running locally before starting the app.
 * If Ollama is running outside Docker, ensure the ports are correctly mapped in `docker-compose.yml`.
 
