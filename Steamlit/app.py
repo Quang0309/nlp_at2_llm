@@ -1,16 +1,18 @@
 import os
 import streamlit as st
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_ollama import ChatOllama
 
 from function.function import (
     OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_EMBED_MODEL,
     INDEX_PATH, DATASET_DIR,
     load_pdf_and_split, build_faiss_from_docs, load_index,
     make_retrieval_chain, list_index_sources,
-    append_new_pdfs_to_index,compare_retrievers,
+    append_new_pdfs_to_index, compare_retrievers,
+    is_jailbreak_attempt,
 )
 
-st.set_page_config(page_title="LangChain + Ollama RAG", page_icon="🦙", layout="wide")
+st.set_page_config(page_title="LangChain + Ollama RAG", page_icon=None, layout="wide")
 
 # ===== Sidebar =====
 st.sidebar.header("Ollama Config")
@@ -21,7 +23,7 @@ st.sidebar.write(f"Index Path: `{INDEX_PATH}`")
 st.sidebar.write(f"PDFs Path: `{DATASET_DIR}`")
 
 # ===== Tabs =====
-tab_chat, tab_index, tab_test = st.tabs([" Chat (RAG)", " Build / Inspect Index", " Compare Retrieval"])
+tab_chat, tab_index, tab_test = st.tabs(["Chat (RAG)", "Build / Inspect Index", "Compare Retrieval"])
 
 # ----- Tab 1: RAG Chat -----
 with tab_chat:
@@ -39,25 +41,48 @@ with tab_chat:
         st.session_state.chat_history = []
         st.session_state.pop("rag_answer", None)
         st.session_state.pop("rag_sources", None)
+        st.session_state.pop("guardrail_status", None)
 
     if run and question.strip():
-        try:
-            vs = load_index()
-        except Exception as e:
-            st.error(f"Failed to load index at `{INDEX_PATH}`. Build it first. Details: {e}")
-            vs = None
+        # Guardrail check first
+        llm_guard = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
+        print(f"Asking question: {question}")
+        risky = is_jailbreak_attempt(llm_guard, question)
+        status_text = "yes" if risky else "no"
 
-        if vs:
-            rag_chain = make_retrieval_chain(vs)
-            with st.spinner("Retrieving and generating..."):
-                res = rag_chain.invoke({"input": question, "chat_history": st.session_state.chat_history})
+        # show guardrail result in UI (before any answer)
+        st.session_state["guardrail_status"] = status_text
+        st.markdown(f"**Guardrail check: Is it an attack? : '{status_text}'**")
 
-            ans = res.get("answer", "")
-            ctx_docs = res.get("context", [])
+        if risky:
+            blocked_msg = "This input appears unsafe or violates academic standards. Please rephrase."
+            st.warning(blocked_msg)
+            st.session_state.chat_history.append(HumanMessage(content=question))
+            st.session_state.chat_history.append(AIMessage(content="Blocked by guardrail."))
+        else:
+            # Load index
+            try:
+                vs = load_index()
+            except Exception as e:
+                st.error(f"Failed to load index at `{INDEX_PATH}`. Build it first. Details: {e}")
+                vs = None
 
-            st.session_state.chat_history.extend([HumanMessage(content=question), AIMessage(content=ans)])
-            st.session_state["rag_answer"] = ans
-            st.session_state["rag_sources"] = ctx_docs
+            # Run RAG
+            if vs:
+                rag_chain = make_retrieval_chain(vs)
+                with st.spinner("Retrieving and generating..."):
+                    res = rag_chain.invoke({"input": question, "chat_history": st.session_state.chat_history})
+
+                ans = res.get("answer", "")
+                ctx_docs = res.get("context", [])
+
+                st.session_state.chat_history.extend([HumanMessage(content=question), AIMessage(content=ans)])
+                st.session_state["rag_answer"] = ans
+                st.session_state["rag_sources"] = ctx_docs
+
+    # Show last guardrail status line (if available)
+    if "guardrail_status" in st.session_state:
+        st.caption(f"Guardrail check: Is it an attack? : '{st.session_state['guardrail_status']}'")
 
     if "rag_answer" in st.session_state:
         st.markdown("### Answer")
@@ -105,9 +130,8 @@ with tab_index:
                         fw.write(f.read())
                 docs = load_pdf_and_split(DATASET_DIR)
 
-            # 2) Build
             with st.spinner("Splitting, embedding, building FAISS..."):
-                vs, n_chunks = build_faiss_from_docs(docs, index_path=INDEX_PATH)
+                _, n_chunks = build_faiss_from_docs(docs, index_path=INDEX_PATH)
             st.success(f"Built index at `{INDEX_PATH}` with {n_chunks} chunks.")
         except Exception as e:
             st.error(f"Build failed: {e}")
@@ -139,7 +163,7 @@ with tab_index:
         except Exception as e:
             st.error(f"Failed to load index: {e}")
 
-# ----- Tab 3: Test Retrieval -----
+# ----- Tab 3: Compare Retrieval -----
 with tab_test:
     st.subheader("Compare Basic vs MultiQuery Retriever")
 
@@ -158,7 +182,7 @@ with tab_test:
 
         if vs:
             with st.spinner("Comparing retrievers..."):
-                res = compare_retrievers(vs, q, k=k, show_content=False)
+                res = compare_retrievers(vs, q, k=k, show_content=show_content)
 
                 basic_docs = res["basic_docs"]
                 mq_docs = res["multiquery_docs"]
@@ -166,54 +190,54 @@ with tab_test:
                 basic_sources = res["basic_sources"]
                 mq_sources = res["mq_sources"]
 
-            # --- summary metrics
-            st.markdown("### 📊 Summary")
+            # Summary metrics
+            st.markdown("### Summary")
             mcol1, mcol2, mcol3, mcol4 = st.columns(4)
             mcol1.metric("Basic: #docs", len(basic_docs))
             mcol2.metric("MultiQuery: #docs", len(mq_docs))
             mcol3.metric("Overlap (doc refs)", len(overlap))
-            mcol4.metric("New in MQ", len(set(mq_sources) - set(basic_sources)))
+            mcol4.metric("New in MultiQuery", len(set(mq_sources) - set(basic_sources)))
 
-            # --- side-by-side lists
+            # Side-by-side lists
             left, right = st.columns(2)
             with left:
-                st.markdown("#### 🔍 Basic Retriever")
+                st.markdown("#### Basic Retriever")
                 for i, s in enumerate(basic_sources, 1):
-                    st.write(f"**{i:02d}.** {s}")
+                    st.write(f"{i:02d}. {s}")
                     if show_content:
                         st.caption(basic_docs[i-1].page_content[:300] + "…")
 
             with right:
-                st.markdown("#### 🔀 MultiQuery Retriever")
+                st.markdown("#### MultiQuery Retriever")
                 for i, s in enumerate(mq_sources, 1):
-                    st.write(f"**{i:02d}.** {s}")
+                    st.write(f"{i:02d}. {s}")
                     if show_content:
                         st.caption(mq_docs[i-1].page_content[:300] + "…")
 
-            # --- overlap & differences
+            # Overlap & differences
             st.markdown("---")
-            st.markdown("#### 🧮 Overlap & Differences")
+            st.markdown("#### Overlap & Differences")
             o1, o2, o3 = st.columns(3)
             with o1:
-                st.write("**Overlap (both):**")
+                st.write("Overlap (both):")
                 if overlap:
                     for s in sorted(overlap):
                         st.caption(f"- {s}")
                 else:
-                    st.caption("_None_")
+                    st.caption("None")
             with o2:
-                st.write("**Only in MultiQuery:**")
+                st.write("Only in MultiQuery:")
                 only_mq = sorted(set(mq_sources) - set(basic_sources))
                 if only_mq:
                     for s in only_mq:
                         st.caption(f"- {s}")
                 else:
-                    st.caption("_None_")
+                    st.caption("None")
             with o3:
-                st.write("**Only in Basic:**")
+                st.write("Only in Basic:")
                 only_basic = sorted(set(basic_sources) - set(mq_sources))
                 if only_basic:
                     for s in only_basic:
                         st.caption(f"- {s}")
                 else:
-                    st.caption("_None_")
+                    st.caption("None")
