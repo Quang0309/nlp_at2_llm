@@ -1,5 +1,9 @@
 import os
 import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_ollama import ChatOllama
 
@@ -10,6 +14,8 @@ from function.function import (
     make_retrieval_chain, list_index_sources,
     append_new_pdfs_to_index, compare_retrievers,
     is_jailbreak_attempt,
+    get_index_stats,          
+    search_with_scores,       
 )
 
 st.set_page_config(page_title="LangChain + Ollama RAG", page_icon=None, layout="wide")
@@ -22,10 +28,89 @@ st.sidebar.write(f"Embedding: `{OLLAMA_EMBED_MODEL}`")
 st.sidebar.write(f"Index Path: `{INDEX_PATH}`")
 st.sidebar.write(f"PDFs Path: `{DATASET_DIR}`")
 
-# ===== Tabs =====
-tab_chat, tab_index, tab_test = st.tabs(["Chat (RAG)", "Build / Inspect Index", "Compare Retrieval"])
+# ===== Tabs (Visualize first) =====
+tab_viz, tab_chat, tab_index, tab_test = st.tabs(
+    ["Visualize", "Chat (RAG)", "Build / Inspect Index", "Compare Retrieval"]
+)
 
-# ----- Tab 1: RAG Chat -----
+# ----- Tab 1: Visualize -----
+with tab_viz:
+    st.subheader("Index & Retrieval Visualizations")
+
+    # Index stats
+    if st.button("Compute index stats"):
+        try:
+            vs = load_index()
+        except Exception as e:
+            st.error(f"Failed to load index at `{INDEX_PATH}`. Details: {e}")
+            vs = None
+
+        if vs:
+            stats = get_index_stats(vs)
+            n_chunks = stats["n_chunks"]
+            source_counts = stats["source_counts"]
+            chunk_lengths = stats["chunk_lengths"]
+
+            # Key metrics
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total chunks", n_chunks)
+            c2.metric("Unique files", len(source_counts))
+            avg_len = int(np.mean(chunk_lengths)) if chunk_lengths else 0
+            c3.metric("Avg chunk length", avg_len)
+
+            # Top sources table + bar
+            if source_counts:
+                st.markdown("#### Top sources by chunks")
+                df_src = (
+                    pd.Series(source_counts, name="chunks")
+                    .sort_values(ascending=False)
+                    .reset_index()
+                    .rename(columns={"index": "source"})
+                    .head(15)
+                )
+                st.dataframe(df_src, use_container_width=True, hide_index=True)
+                st.bar_chart(df_src.set_index("source"))
+
+    st.markdown("---")
+
+    # Score explorer for a test query
+    st.markdown("### Retrieval score explorer")
+    q_demo = st.text_input("Query to score:", value="What is NLP?")
+    k_demo = st.slider("Top-k", 1, 15, 8, 1)
+    if st.button("Run scoring"):
+        try:
+            vs = load_index()
+        except Exception as e:
+            st.error(f"Failed to load index at `{INDEX_PATH}`. Details: {e}")
+            vs = None
+
+        if vs and q_demo.strip():
+            pairs = search_with_scores(vs, q_demo, k=k_demo)
+            if not pairs:
+                st.info("No results.")
+            else:
+                rows = []
+                for doc, score in pairs:
+                    src = os.path.basename(doc.metadata.get("source", ""))
+                    pg = (doc.metadata.get("page", -1) or -1) + 1
+                    rows.append({
+                        "source": f"{src} (p.{pg})",
+                        "score": score,
+                        "snippet": (doc.page_content[:200] + "…") if doc.page_content else "",
+                    })
+                df_scores = pd.DataFrame(rows)
+
+                st.write("Lower score = more similar (FAISS distance).")
+                st.dataframe(df_scores, use_container_width=True)
+
+                fig2, ax2 = plt.subplots()
+                ax2.barh(df_scores["source"], df_scores["score"])
+                ax2.invert_yaxis()
+                ax2.set_xlabel("Distance (lower is better)")
+                ax2.set_ylabel("Result")
+                st.pyplot(fig2)
+
+# ----- Tab 2: RAG Chat -----
 with tab_chat:
     st.subheader("Chat with your documents (RAG)")
 
@@ -44,13 +129,13 @@ with tab_chat:
         st.session_state.pop("guardrail_status", None)
 
     if run and question.strip():
-        # Guardrail check first
+        # Guardrail first
         llm_guard = ChatOllama(model=OLLAMA_MODEL, base_url=OLLAMA_BASE_URL)
         print(f"Asking question: {question}")
         risky = is_jailbreak_attempt(llm_guard, question)
         status_text = "yes" if risky else "no"
 
-        # show guardrail result in UI (before any answer)
+        # Show guardrail result before answer
         st.session_state["guardrail_status"] = status_text
         st.markdown(f"**Guardrail check: Is it an attack? : '{status_text}'**")
 
@@ -67,7 +152,7 @@ with tab_chat:
                 st.error(f"Failed to load index at `{INDEX_PATH}`. Build it first. Details: {e}")
                 vs = None
 
-            # Run RAG
+            # RAG
             if vs:
                 rag_chain = make_retrieval_chain(vs)
                 with st.spinner("Retrieving and generating..."):
@@ -75,15 +160,15 @@ with tab_chat:
 
                 ans = res.get("answer", "")
                 ctx_docs = res.get("context", [])
-
                 st.session_state.chat_history.extend([HumanMessage(content=question), AIMessage(content=ans)])
                 st.session_state["rag_answer"] = ans
                 st.session_state["rag_sources"] = ctx_docs
 
-    # Show last guardrail status line (if available)
+    # Tail line for guardrail
     if "guardrail_status" in st.session_state:
         st.caption(f"Guardrail check: Is it an attack? : '{st.session_state['guardrail_status']}'")
 
+    # Answer and sources
     if "rag_answer" in st.session_state:
         st.markdown("### Answer")
         st.write(st.session_state["rag_answer"])
@@ -101,7 +186,7 @@ with tab_chat:
             shown.add(key)
             st.caption(f"- {src} — page {page}")
 
-# ----- Tab 2: Build / Inspect Index -----
+# ----- Tab 3: Build / Inspect Index -----
 with tab_index:
     st.subheader("Build / Overwrite FAISS Index")
 
@@ -112,7 +197,7 @@ with tab_index:
 
     col_b1, col_b2, col_b3 = st.columns([1, 1, 1])
 
-    # Build index (from existing or from uploaded)
+    # Build index (existing or uploads)
     if col_b1.button("Build index", use_container_width=True):
         try:
             if use_existing:
@@ -136,7 +221,7 @@ with tab_index:
         except Exception as e:
             st.error(f"Build failed: {e}")
 
-    # Append new PDFs (do not rebuild)
+    # Append-only
     if col_b2.button("Append new PDFs to existing index", use_container_width=True):
         try:
             with st.spinner("Embedding and appending new PDFs..."):
@@ -148,7 +233,7 @@ with tab_index:
         except Exception as e:
             st.error(f"Append failed: {e}")
 
-    # Inspect index
+    # Inspect metadata
     if col_b3.button("Inspect current index", use_container_width=True):
         try:
             vs = load_index()
@@ -163,7 +248,7 @@ with tab_index:
         except Exception as e:
             st.error(f"Failed to load index: {e}")
 
-# ----- Tab 3: Compare Retrieval -----
+# ----- Tab 4: Compare Retrieval -----
 with tab_test:
     st.subheader("Compare Basic vs MultiQuery Retriever")
 
@@ -183,22 +268,19 @@ with tab_test:
         if vs:
             with st.spinner("Comparing retrievers..."):
                 res = compare_retrievers(vs, q, k=k, show_content=show_content)
-
                 basic_docs = res["basic_docs"]
                 mq_docs = res["multiquery_docs"]
                 overlap = res["overlap"]
                 basic_sources = res["basic_sources"]
                 mq_sources = res["mq_sources"]
 
-            # Summary metrics
             st.markdown("### Summary")
-            mcol1, mcol2, mcol3, mcol4 = st.columns(4)
-            mcol1.metric("Basic: #docs", len(basic_docs))
-            mcol2.metric("MultiQuery: #docs", len(mq_docs))
-            mcol3.metric("Overlap (doc refs)", len(overlap))
-            mcol4.metric("New in MultiQuery", len(set(mq_sources) - set(basic_sources)))
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Basic: #docs", len(basic_docs))
+            m2.metric("MultiQuery: #docs", len(mq_docs))
+            m3.metric("Overlap (doc refs)", len(overlap))
+            m4.metric("New in MultiQuery", len(set(mq_sources) - set(basic_sources)))
 
-            # Side-by-side lists
             left, right = st.columns(2)
             with left:
                 st.markdown("#### Basic Retriever")
@@ -214,7 +296,6 @@ with tab_test:
                     if show_content:
                         st.caption(mq_docs[i-1].page_content[:300] + "…")
 
-            # Overlap & differences
             st.markdown("---")
             st.markdown("#### Overlap & Differences")
             o1, o2, o3 = st.columns(3)

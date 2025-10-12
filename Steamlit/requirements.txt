@@ -4,3 +4,6 @@ langchain-community==0.2.12
 langchain-ollama==0.1.0
 faiss-cpu==1.7.4
 pypdf==4.2.0
+matplotlib
+numpy
+pandas
