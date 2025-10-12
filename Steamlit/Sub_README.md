@@ -84,10 +84,36 @@ The system follows a **RAG (Retrieval-Augmented Generation)** pipeline:
     *   If you update your function only , rebuild before running again:
         ```bash
         docker compose up -d --build app   ```
+* => After confirming the app runs correctly (containers healthy, Streamlit reachable at (http://localhost:8501)).
+7. **Push lastest code changes to GitHub:**
+    * Check before update 
+        ```bash
+        git stash
+        git pull origin main --rebase
+        git stash pop
+        ```
+        
+    * Run these commands from the project root:
+        ```bash
+        git add .
+        git commit -m " Update......"
+        git push origin main
+        ```
+    * If you are working on a new branch (recommended for feature updates):
+
+        ```bash
+        git checkout -b feature/test
+        git push -u origin feature/test
+        ```
+    * Then open your GitHub repository → create a **Pull Request** → review and merge into `main`.
+    * Once merged, your updated Streamlit RAG project and Compare Retrieval feature are now versioned and ready for evaluation.
 ---
- **Notes:**
+
+**Notes:**
+
 * The container automatically installs packages from `requirements.txt`.
 * After the first build, if you only update functions, using command 6 will be faster.
 * Make sure Ollama models (like `llama3` and `nomic-embed-text`) are already downloaded and running locally before starting the app.
 * If Ollama is running outside Docker, ensure the ports are correctly mapped in `docker-compose.yml`.
+
 
