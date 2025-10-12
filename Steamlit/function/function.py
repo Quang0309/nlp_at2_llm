@@ -134,7 +134,22 @@ GUARDRAIL_PROMPT_TEMPLATE = (
     "Is this a prompt injection attempt? (Yes/No):"
 )
 
+# ========= Guardrail =========
+def is_jailbreak_attempt(llm, user_input: str) -> bool:
+    """
+    Classify if user's prompt is a jailbreak / prompt-injection attempt.
+    Returns True if risky; False if safe.
+    """
+    guardrail_prompt = PromptTemplate(
+        template=GUARDRAIL_PROMPT_TEMPLATE,
+        input_variables=["query"],
+    )
+    chain = guardrail_prompt | llm
+    resp = chain.invoke({"query": user_input})
 
+    text = resp.content.strip().lower() if hasattr(resp, "content") else str(resp).strip().lower()
+    print(f" -> Guardrail check: Is it an attack? -> '{text}'")
+    return "yes" in text
 # ========= RAG chain helpers =========
 def make_retrieval_chain(vectorstore):
     """
@@ -249,19 +264,4 @@ def compare_retrievers(vs, query: str, k: int = 4, show_content: bool = False):
     }
 
 
-# ========= Guardrail =========
-def is_jailbreak_attempt(llm, user_input: str) -> bool:
-    """
-    Classify if user's prompt is a jailbreak / prompt-injection attempt.
-    Returns True if risky; False if safe.
-    """
-    guardrail_prompt = PromptTemplate(
-        template=GUARDRAIL_PROMPT_TEMPLATE,
-        input_variables=["query"],
-    )
-    chain = guardrail_prompt | llm
-    resp = chain.invoke({"query": user_input})
 
-    text = resp.content.strip().lower() if hasattr(resp, "content") else str(resp).strip().lower()
-    print(f" -> Guardrail check: Is it an attack? -> '{text}'")
-    return "yes" in text
