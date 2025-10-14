@@ -1,6 +1,8 @@
 import os
 from typing import List, Set
 from collections import Counter  # for simple counts
+import numpy as np
+from sklearn.manifold import TSNE
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter

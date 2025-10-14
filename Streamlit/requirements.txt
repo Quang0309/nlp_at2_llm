@@ -7,3 +7,6 @@ pypdf==4.2.0
 matplotlib
 numpy
 pandas
+scikit-learn
+seaborn
+umap-learn==0.5.6

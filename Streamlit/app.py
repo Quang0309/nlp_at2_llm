@@ -3,6 +3,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.manifold import TSNE
+import seaborn as sns
 
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_ollama import ChatOllama
@@ -15,7 +17,7 @@ from function.function import (
     append_new_pdfs_to_index, compare_retrievers,
     is_jailbreak_attempt,
     get_index_stats,          
-    search_with_scores,       
+    search_with_scores,
 )
 
 st.set_page_config(page_title="LangChain + Ollama RAG", page_icon=None, layout="wide")
@@ -163,10 +165,6 @@ with tab_chat:
                 st.session_state.chat_history.extend([HumanMessage(content=question), AIMessage(content=ans)])
                 st.session_state["rag_answer"] = ans
                 st.session_state["rag_sources"] = ctx_docs
-
-    # Tail line for guardrail
-    if "guardrail_status" in st.session_state:
-        st.caption(f"Guardrail check: Is it an attack? : '{st.session_state['guardrail_status']}'")
 
     # Answer and sources
     if "rag_answer" in st.session_state:

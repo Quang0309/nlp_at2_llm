@@ -1,4 +1,5 @@
 # LangChain + Ollama + Streamlit RAG App
+![alt text](image.png)
 
 This project is a **local Retrieval-Augmented Generation (RAG) system** that allows you to **chat with your own PDF documents** through a beautiful **Streamlit web interface** — fully offline and privacy-friendly.  
 It uses **Ollama** to run open-source Large Language Models (LLMs) such as **Llama 3.1:8B** and **nomic-embed-text** locally, without any API key or cost.
