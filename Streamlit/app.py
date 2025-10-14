@@ -17,7 +17,7 @@ from function.function import (
     append_new_pdfs_to_index, compare_retrievers,
     is_jailbreak_attempt,
     get_index_stats,          
-    search_with_scores,
+    search_with_scores,    
 )
 
 st.set_page_config(page_title="LangChain + Ollama RAG", page_icon=None, layout="wide")
@@ -111,7 +111,6 @@ with tab_viz:
                 ax2.set_xlabel("Distance (lower is better)")
                 ax2.set_ylabel("Result")
                 st.pyplot(fig2)
-
 # ----- Tab 2: RAG Chat -----
 with tab_chat:
     st.subheader("Chat with your documents (RAG)")
@@ -165,7 +164,6 @@ with tab_chat:
                 st.session_state.chat_history.extend([HumanMessage(content=question), AIMessage(content=ans)])
                 st.session_state["rag_answer"] = ans
                 st.session_state["rag_sources"] = ctx_docs
-
     # Answer and sources
     if "rag_answer" in st.session_state:
         st.markdown("### Answer")

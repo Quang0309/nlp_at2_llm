@@ -74,8 +74,8 @@ The system follows a **RAG (Retrieval-Augmented Generation)** pipeline:
         docker compose down
         ```
 
-5.  **Rebuild after code or dependency changes :**
-    *   If you update your code or `requirements.txt`, rebuild before running again:
+5.  **Build code and dependency :**
+    *   If this is the first time you run code, build before running again:
         ```bash
         docker compose build
         docker compose up -d
