@@ -76,14 +76,18 @@ The system follows a **RAG (Retrieval-Augmented Generation)** pipeline:
 5.  **Rebuild after code or dependency changes :**
     *   If you update your code or `requirements.txt`, rebuild before running again:
         ```bash
-        docker compose up -d --build
+        docker compose build
+        docker compose up -d
+        ```
 6.  **Rebuild after code or function changes (optional):**
     *   If you update your code or `requirements.txt`, rebuild before running again:
         ```bash
-        docker compose up -d --build       ```
+        docker compose up -d --build      
+         ```
     *   If you update your function only , rebuild before running again:
         ```bash
-        docker compose up -d --build app   ```
+        docker compose up -d --build app   
+        ```
 * => After confirming the app runs correctly (containers healthy, Streamlit reachable at (http://localhost:8501)).
 7. **Push lastest code changes to GitHub:**
     * Check before update 
